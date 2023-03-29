@@ -92,6 +92,31 @@ class Pipeline():
         if not nvosd:
             raise RuntimeError("Unable to create nvosd")
         
+        logging.info("Creating tee")
+        tee = Gst.ElementFactory.make("tee", "tee")
+        if not tee:
+            raise RuntimeError("Unable to create tee")
+        
+        logging.info("Creating queue")
+        queue1 = Gst.ElementFactory.make("queue", "queue1")
+        if not queue1:
+            raise RuntimeError("Unable to create queue")
+        
+        logging.info("Creating queue")
+        queue2 = Gst.ElementFactory.make("queue", "queue2")
+        if not queue2:
+            raise RuntimeError("Unable to create queue")
+        
+        logging.info("Creating nvmsgconv")
+        nvmsgconv = Gst.ElementFactory.make("nvmsgconv", "msgconv")
+        if not nvmsgconv:
+            raise RuntimeError("Unable to create msgconv")
+        
+        logging.info("Creating nvmsgbroker")
+        nvmsgbroker = Gst.ElementFactory.make("nvmsgbroker", "broker")
+        if not nvmsgbroker:
+            raise RuntimeError("Unable to create nvmsgbroker")
+        
         if utils.is_aarch64():
             logging.info("Creating transform")
             transform = Gst.ElementFactory.make("nvegltransform", "nvegl-transform")
@@ -145,9 +170,14 @@ class Pipeline():
         streammux.link(pgie)
         pgie.link(nvvidconv1)
         nvvidconv1.link(filter1)
-        filter1.link(tiler)
+        filter1.link(tee)
+        tee.link(queue1)
+        tee.link(queue2)
+        queue1.link(tiler)
         tiler.link(nvvidconv2)
         nvvidconv2.link(nvosd)
+        queue2.link(nvmsgconv)
+        nvmsgconv.link(nvmsgbroker)
         
         if utils.is_aarch64():
             nvosd.link(transform)
@@ -155,10 +185,28 @@ class Pipeline():
         else:
             nvosd.link(sink)
         
-        
+        self._loop = GObject.MainLoop()
+        bus = self._pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message", bus_call, self._loop)
     
-    def run(self):
-        pass
+    
+    def _clean(self) -> None:
+        logging.info("Cleaning up pipeline")
+        pyds.unset_callback_funcs()
+        self._pipeline.set_state(Gst.State.NULL)
+    
+    def run(self) -> None:
+        logging.info("Running pipeline")
+        self._pipeline.set_state(Gst.State.PLAYING)
+        try:
+            self._loop.run()
+        except Exception as e:
+            self._clean()
+            raise e
+        
+        
+            
     
     def _osd_sink_buffer_probe(self, pad, info, u_data):
         pass
