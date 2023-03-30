@@ -8,16 +8,23 @@ from gi.repository import GObject, Gst
 from shapely.geometry import MultiLineString, Point
 
 import utils
+from utils import  bus_call
 
 
 
 class Pipeline():
-    def __init__(self, config: Dict, tiled_output_height: int, tiled_output_width: int) -> None:
+    def __init__(self, config: Dict, tiled_output_height: int, tiled_output_width: int,
+                 protolib_path: str, payload_type: int, connection_string: str, topic: str = None) -> None:
         self.config = config
         self.tiled_output_height = tiled_output_height
         self.tiled_output_width = tiled_output_width
-        self._build()
         self._model_config_path = "configs/model_config.txt"
+        self._msg_config_path = "configs/msgconv_config.txt"
+        self._protolib_path = protolib_path
+        self._payload_type = payload_type
+        self._connection_string = connection_string
+        self._topic = topic
+        self._build()
         
     def _build(self) -> None:
         num_sources = len(self.config)
@@ -71,11 +78,11 @@ class Pipeline():
         
         logging.info("Creating filter 1")
         caps1 = Gst.Caps.from_string("video/x-raw(memory:NVMM), format=RGBA")
-        filter1 = Gst.ElementFactory.make("capsfilter", "filter1")
-        if not filter1:
+        filter = Gst.ElementFactory.make("capsfilter", "filter1")
+        if not filter:
             raise RuntimeError("Unable to create the caps filter")
         
-        filter1.set_property("caps", caps1)
+        filter.set_property("caps", caps1)
         
         logging.info("Creating tiler")
         tiler = Gst.ElementFactory.make("nvmultistreamtiler", "nvtiler")
@@ -155,11 +162,20 @@ class Pipeline():
         sink.set_property("sync", 0)
         sink.set_property("qos", 0)
         
+        nvmsgconv.set_property("config", self._msg_config_path)
+        nvmsgconv.set_property("payload-type", self._payload_type)
+        nvmsgbroker.set_property("proto-lib", self._protolib_path)
+        nvmsgbroker.set_property("conn-str", self._connection_string)
+        nvmsgbroker.set_property("sync", False)
+        
         logging.info("Adding elements to Pipeline")
         self._pipeline.add(pgie)
         self._pipeline.add(nvvidconv1)
         self._pipeline.add(nvvidconv2)
-        self._pipeline.add(filter1)
+        self._pipeline.add(filter)
+        self._pipeline.add(tee)
+        self._pipeline.add(nvmsgconv)
+        self._pipeline.add(nvmsgbroker)
         self._pipeline.add(nvosd)
         self._pipeline.add(tiler)
         if utils.is_aarch64():
@@ -169,26 +185,48 @@ class Pipeline():
         logging.info("Linkink elements in the pipeline")
         streammux.link(pgie)
         pgie.link(nvvidconv1)
-        nvvidconv1.link(filter1)
-        filter1.link(tee)
-        tee.link(queue1)
-        tee.link(queue2)
-        queue1.link(tiler)
+        nvvidconv1.link(filter)
+        filter.link(tiler)
         tiler.link(nvvidconv2)
         nvvidconv2.link(nvosd)
-        queue2.link(nvmsgconv)
+        nvosd.link(tee)
+        
+        queue1.link(nvmsgconv)
         nvmsgconv.link(nvmsgbroker)
         
         if utils.is_aarch64():
-            nvosd.link(transform)
+            queue2.link(transform)
             transform.link(sink)
         else:
             nvosd.link(sink)
+            
+        queue1_sink_pad = queue1.get_static_pad("sink")
+        queue2_sink_pad = queue2.get_static_pad("sink")
+        tee_msg_pad = tee.get_request_pad("src_%u")
+        tee_render_pad = tee.get_request_pad("src_%u")
+        if not tee_msg_pad or not tee_render_pad:
+            raise RuntimeError("Unable to get request pads\n")
+        tee_msg_pad.link(queue1_sink_pad)
+        tee_render_pad.link(queue2_sink_pad)
         
+        # Create an event management loop
         self._loop = GObject.MainLoop()
+        # Get bus in charge of communicating messages in the system
         bus = self._pipeline.get_bus()
+        # Tell the bus to emit signal whenever it receives a new message
         bus.add_signal_watch()
+        # Call the bus_call function whenever a message signal is received
         bus.connect("message", bus_call, self._loop)
+        
+        tee_sink_pad = tee.get_static_pad("sink")
+        if not tee_sink_pad:
+            raise RuntimeError("Unable to get tee sink")
+
+        tee_sink_pad.add_probe(
+            Gst.PadProbeType.BUFFER,
+            self._tee_sink_buffer_probe,
+            0
+        )
     
     
     def _clean(self) -> None:
@@ -203,10 +241,7 @@ class Pipeline():
             self._loop.run()
         except Exception as e:
             self._clean()
-            raise e
-        
-        
-            
+            raise e    
     
-    def _osd_sink_buffer_probe(self, pad, info, u_data):
+    def _tee_sink_buffer_probe(self, pad, info, u_data):
         pass
