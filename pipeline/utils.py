@@ -67,7 +67,7 @@ def decodebin_child_added(child_proxy, Object, name, user_data):
     """Callback function to connect the child-added signal to the
     bin element recursively.
     """
-    if name.find("decodebin") != -1:
+    if "decodebin" in name:
         Object.connect("child-added", decodebin_child_added, user_data)
         
     if "source" in name:

@@ -11,19 +11,16 @@ import utils
 from utils import  bus_call
 
 
-
 class Pipeline():
-    def __init__(self, config: Dict, tiled_output_height: int, tiled_output_width: int,
-                 protolib_path: str, payload_type: int, connection_string: str, topic: str = None) -> None:
+    def __init__(self, config: Dict, protolib_path: str, connection_string: str) -> None:
         self.config = config
-        self.tiled_output_height = tiled_output_height
-        self.tiled_output_width = tiled_output_width
+        self.tiled_output_height = 1080
+        self.tiled_output_width = 1920
         self._model_config_path = "configs/model_config.txt"
         self._msg_config_path = "configs/msgconv_config.txt"
         self._protolib_path = protolib_path
-        self._payload_type = payload_type
+        self._payload_type = 0
         self._connection_string = connection_string
-        self._topic = topic
         self._build()
         
     def _build(self) -> None:
@@ -244,4 +241,74 @@ class Pipeline():
             raise e    
     
     def _tee_sink_buffer_probe(self, pad, info, u_data):
-        pass
+        gst_buffer = info.get_buffer()
+        
+        if not gst_buffer:
+            logging.warning("Unable to get GstBuffer")
+            
+        batch_meta = pyds.gst_buffer_get_nvds_batch_meta(hash(gst_buffer))
+        l_frame = batch_meta.frame_meta_list
+        
+        while l_frame is not None:
+            try:
+                frame_meta = pyds.NvDsFrameMeta.cast(l_frame)
+            except StopIteration:
+                break
+            
+            # Extracting the configuration for the current frame
+            source_id = frame_meta.source_id
+            stream_config = self.config[str(source_id)]
+            restricted_zones = stream_config["restricted_zones"]
+            
+            # Display the restricted zones
+            for zone in restricted_zones:
+                display_meta = pyds.nvds_acquire_display_meta_from_pool(batch_meta)
+                display_meta.num_lines = len(zone)
+                lines_params = display_meta.line_params
+                for line_idx in range(display_meta.num_lines):
+                    params = lines_params[line_idx]
+                    line = zone[line_idx]
+                    
+                    params.x1 = line[0][0]
+                    params.x1 = line[0][1]
+                    params.x2 = line[1][0]
+                    params.y2 = line[1][1]
+                    
+                    params.line_width = 3
+                    params.line_color.set(1.0, 0, 0, 1.0)
+                    
+                pyds.nvds_add_display_meta_to_frame(frame_meta, display_meta)
+            
+            l_obj = frame_meta.obj_meta_list
+            
+            while l_obj is not None:
+                try:
+                    obj_meta = pyds.NvDsObjectMeta.cast(l_obj.data)
+                except StopIteration:
+                    break
+                
+                # Making all the boxes green
+                obj_meta.rect_params.border_color.set(0, 1.0, 1.0)
+                
+                # Only high confidence detections are evaluated
+                if obj_meta.class_id == 2 and obj_meta.confidence >= stream_config["confidence"]:
+                    feet_point_x = obj_meta.rect_params.left + obj_meta.rect_params.width / 2
+                    feet_point_y = obj_meta.rect_params.top + obj_meta.rect_params.height
+                    person_position = Point(feet_point_x, feet_point_y)
+                    
+                    for zone in enumerate(restricted_zones):
+                        # Create polygons from lines, used to evaliated persons positions
+                        zone = MultiLineString(zone).convex_hull
+                        alarm = zone.contains(person_position)
+                        if alarm:
+                            obj_meta.rect_params.border_color.set(1.0, 0, 0, 1.0)
+                        else:
+                            break
+                        
+            try:
+                l_obj = l_obj.next
+            except StopIteration:
+                break
+            
+        return Gst.PadProbeReturn.OK
+    
