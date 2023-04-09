@@ -7,15 +7,15 @@ import pyds
 from gi.repository import GObject, Gst
 from shapely.geometry import MultiLineString, Point
 
-import utils
-from utils import  bus_call
+from pipeline import utils
+from pipeline.utils import  bus_call
 
 
 class Pipeline():
     def __init__(self, config: Dict, protolib_path: str, connection_string: str) -> None:
         self.config = config
-        self.tiled_output_height = 1080
-        self.tiled_output_width = 1920
+        self._tiled_output_height = 1080
+        self._tiled_output_width = 1920
         self._model_config_path = "configs/model_config.txt"
         self._msg_config_path = "configs/msgconv_config.txt"
         self._protolib_path = protolib_path
@@ -87,7 +87,7 @@ class Pipeline():
             raise RuntimeError("Unable to create the tiler")
 
         logging.info("Creating video converter 2")
-        nvvidconv2 = Gst.ElementFactory.make("nvvidconvert", "convertor2")
+        nvvidconv2 = Gst.ElementFactory.make("nvvideoconvert", "convertor2")
         if not nvvidconv2:
             raise RuntimeError("Unable to create video converter module 2")
         
@@ -175,6 +175,8 @@ class Pipeline():
         self._pipeline.add(nvmsgbroker)
         self._pipeline.add(nvosd)
         self._pipeline.add(tiler)
+        self._pipeline.add(queue1)
+        self._pipeline.add(queue2)
         if utils.is_aarch64():
             self._pipeline.add(transform)
         self._pipeline.add(sink)
@@ -195,12 +197,12 @@ class Pipeline():
             queue2.link(transform)
             transform.link(sink)
         else:
-            nvosd.link(sink)
+            queue2.link(sink)
             
         queue1_sink_pad = queue1.get_static_pad("sink")
         queue2_sink_pad = queue2.get_static_pad("sink")
-        tee_msg_pad = tee.get_request_pad("src_%u")
-        tee_render_pad = tee.get_request_pad("src_%u")
+        tee_msg_pad = tee.get_request_pad('src_%u')
+        tee_render_pad = tee.get_request_pad('src_%u')
         if not tee_msg_pad or not tee_render_pad:
             raise RuntimeError("Unable to get request pads\n")
         tee_msg_pad.link(queue1_sink_pad)
@@ -215,13 +217,13 @@ class Pipeline():
         # Call the bus_call function whenever a message signal is received
         bus.connect("message", bus_call, self._loop)
         
-        tee_sink_pad = tee.get_static_pad("sink")
-        if not tee_sink_pad:
-            raise RuntimeError("Unable to get tee sink")
+        tiler_sink_pad = tiler.get_static_pad("sink")
+        if not tiler_sink_pad:
+            raise RuntimeError("Unable to get tiler sink")
 
-        tee_sink_pad.add_probe(
+        tiler_sink_pad.add_probe(
             Gst.PadProbeType.BUFFER,
-            self._tee_sink_buffer_probe,
+            self._tiler_sink_buffer_probe,
             0
         )
     
@@ -240,7 +242,7 @@ class Pipeline():
             self._clean()
             raise e    
     
-    def _tee_sink_buffer_probe(self, pad, info, u_data):
+    def _tiler_sink_buffer_probe(self, pad, info, u_data):
         gst_buffer = info.get_buffer()
         
         if not gst_buffer:
@@ -251,7 +253,7 @@ class Pipeline():
         
         while l_frame is not None:
             try:
-                frame_meta = pyds.NvDsFrameMeta.cast(l_frame)
+                frame_meta = pyds.NvDsFrameMeta.cast(l_frame.data)
             except StopIteration:
                 break
             
@@ -268,9 +270,10 @@ class Pipeline():
                 for line_idx in range(display_meta.num_lines):
                     params = lines_params[line_idx]
                     line = zone[line_idx]
+                    print(display_meta.num_lines)
                     
                     params.x1 = line[0][0]
-                    params.x1 = line[0][1]
+                    params.y1 = line[0][1]
                     params.x2 = line[1][0]
                     params.y2 = line[1][1]
                     
@@ -288,7 +291,7 @@ class Pipeline():
                     break
                 
                 # Making all the boxes green
-                obj_meta.rect_params.border_color.set(0, 1.0, 1.0)
+                obj_meta.rect_params.border_color.set(0, 1.0, 1.0, 1.0)
                 
                 # Only high confidence detections are evaluated
                 if obj_meta.class_id == 2 and obj_meta.confidence >= stream_config["confidence"]:
@@ -305,8 +308,13 @@ class Pipeline():
                         else:
                             break
                         
+                try:
+                    l_obj = l_obj.next
+                except StopIteration:
+                    break
+                
             try:
-                l_obj = l_obj.next
+                l_frame = l_frame.next
             except StopIteration:
                 break
             

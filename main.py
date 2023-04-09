@@ -23,6 +23,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", required=True, type=str)
     parser.add_argument("--protolib_path", required=True, type=str)
-    parser.add_argument("--connection_string", required=True, type=int)
+    parser.add_argument("--connection_string", required=True, type=str)
     args = parser.parse_args()
     main(args)
