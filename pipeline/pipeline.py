@@ -9,6 +9,7 @@ from shapely.geometry import MultiLineString, Point
 
 from pipeline import utils
 from pipeline.utils import  bus_call
+from pipeline.metadata import generate_event_msg_meta, meta_copy_func, meta_free_func
 
 
 class Pipeline():
@@ -270,8 +271,7 @@ class Pipeline():
                 for line_idx in range(display_meta.num_lines):
                     params = lines_params[line_idx]
                     line = zone[line_idx]
-                    print(display_meta.num_lines)
-                    
+                                        
                     params.x1 = line[0][0]
                     params.y1 = line[0][1]
                     params.x2 = line[1][0]
@@ -282,6 +282,7 @@ class Pipeline():
                     
                 pyds.nvds_add_display_meta_to_frame(frame_meta, display_meta)
             
+            frame_number = l_frame.frame_num
             l_obj = frame_meta.obj_meta_list
             
             while l_obj is not None:
@@ -299,15 +300,29 @@ class Pipeline():
                     feet_point_y = obj_meta.rect_params.top + obj_meta.rect_params.height
                     person_position = Point(feet_point_x, feet_point_y)
                     
-                    for zone in enumerate(restricted_zones):
+                    for zone in restricted_zones:
                         # Create polygons from lines, used to evaliated persons positions
                         zone = MultiLineString(zone).convex_hull
                         alarm = zone.contains(person_position)
                         if alarm:
                             obj_meta.rect_params.border_color.set(1.0, 0, 0, 1.0)
-                        else:
+                            msg_meta = generate_event_msg_meta(obj_meta, frame_meta)
+                            user_event_meta = pyds.nvds_acquire_user_meta_from_pool(batch_meta)
+                            if user_event_meta:
+                                user_event_meta.user_meta_data = msg_meta
+                                user_event_meta.base_meta.meta_type = pyds.NvDsMetaType.NVDS_EVENT_MSG_META
+                                pyds.user_copyfunc(user_event_meta, meta_copy_func)
+                                pyds.user_releasefunc(user_event_meta, meta_free_func)
+                                pyds.nvds_add_user_meta_to_frame(frame_meta, user_event_meta)
+                            else:
+                                logging.warning("Error in attaching event meta to buffer")
                             break
-                        
+
+                else:
+                    obj_meta.rect_params.border_width = 0
+                    obj_meta.text_params.display_text = ""
+                    obj_meta.text_params.set_bg_clr = 0
+                
                 try:
                     l_obj = l_obj.next
                 except StopIteration:
