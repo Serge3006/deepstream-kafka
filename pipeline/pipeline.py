@@ -282,7 +282,6 @@ class Pipeline():
                     
                 pyds.nvds_add_display_meta_to_frame(frame_meta, display_meta)
             
-            frame_number = l_frame.frame_num
             l_obj = frame_meta.obj_meta_list
             
             while l_obj is not None:
@@ -292,10 +291,12 @@ class Pipeline():
                     break
                 
                 # Making all the boxes green
-                obj_meta.rect_params.border_color.set(0, 1.0, 1.0, 1.0)
+                obj_meta.rect_params.border_color.set(0, 1.0, 0, 1.0)
                 
                 # Only high confidence detections are evaluated
-                if obj_meta.class_id == 2 and obj_meta.confidence >= stream_config["confidence"]:
+                if (obj_meta.class_id == 0 and obj_meta.confidence >= stream_config["car_confidence"]) or \
+                   (obj_meta.class_id == 2 and obj_meta.confidence >= stream_config["person_confidence"]):
+                       
                     feet_point_x = obj_meta.rect_params.left + obj_meta.rect_params.width / 2
                     feet_point_y = obj_meta.rect_params.top + obj_meta.rect_params.height
                     person_position = Point(feet_point_x, feet_point_y)

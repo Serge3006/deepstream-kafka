@@ -75,5 +75,9 @@ def generate_event_msg_meta(obj_meta, frame_meta):
     msg_meta.type = pyds.NvDsEventType.NVDS_EVENT_ENTRY
     msg_meta.objType = pyds.NvDsObjectType.NVDS_OBJECT_TYPE_PERSON
     msg_meta.objClassId = obj_meta.class_id
+    if obj_meta.class_id == 0:
+        msg_meta.objType = pyds.NvDsObjectType.NVDS_OBJECT_TYPE_VEHICLE
+    elif obj_meta.class_id == 2:
+        msg_meta.objType = pyds.NvDsObjectType.NVDS_OBJECT_TYPE_PERSON
         
     return msg_meta
