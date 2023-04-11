@@ -1,5 +1,5 @@
 # Restricted Zone Access Detection with Kafka Connection
-Deepstream application to detect people inside pre defined restricted zones. In case a person is detected inside these zones the bounding boxes change in color and a metadata message is send to a kafka broker with all the information of the event
+Deepstream application to detect people and cars inside pre-defined restricted zones. In case an object is detected inside these zones the bounding boxes change in color and a metadata message is send to a kafka broker with all the information of the event.
 
 ![alt text](https://github.com/Serge3006/deepstream-kafka/blob/master/resources/output.gif "Application output")
 
