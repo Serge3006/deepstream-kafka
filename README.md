@@ -1,6 +1,9 @@
 # Restricted Zone Access Detection with Kafka Connection
 Deepstream application to detect people inside pre defined restricted zones. In case a person is detected inside these zones the bounding boxes change in color and a metadata message is send to a kafka broker with all the information of the event
 
+![alt text](https://github.com/Serge3006/deepstream-kafka/blob/master/resources/output.gif "Application output")
+
+
 ## Dependencies
 
 1. Install Kafka dependencies
@@ -29,6 +32,40 @@ sudo apt-get install libjansson4 libjansson-dev
 pip install -r requirements.txt
 ```
 
+## Setup Apache Kafka
+
+The following instructions are based on the official documentation of Apache Kafka taken from here: https://kafka.apache.org/quickstart, for more details or other ways to start the service checkout the official website.
+
+1. Download the latest kafka and extract it
+
+```
+tar -xzf kafka_2.13-3.4.0.tgz
+cd kafka_2.13-3.4.0
+```
+
+2. Start the ZooKeper server in one terminal
+```
+bin/zookeeper-server-start.sh config/zookeeper.properties
+```
+
+3. Start the Kafka server in another terminal
+```
+bin/kafka-server-start.sh config/server.properties
+```
+
+4. Create a topic in another terminal
+```
+bin/kafka-topics.sh --create --topic deepstream-topic --bootstrap-server localhost:9092
+```
+
+5. In the same terminal run the console consumer client to read the events
+
+```
+bin/kafka-console-consumer.sh --topic deepstream-topic --from-beginning --bootstrap-server localhost:9092
+```
+
+Take into account that the the host, port and topic used to setup the server should be used at the moment of providing the connection string to the deepstream application: <host>;<port>;<topic>.
+
 ## How to run the application
 
 1. Pull deepstream python bindings docker
@@ -55,5 +92,5 @@ pip install -r requirements.txt
 ```
 6. Run the application
 ```
-python3 -m main --config_path configs/app_config.json --protolib_path /opt/nvidia/deepstream/deepstream-6.1/lib/libnvds_kafka_proto.so --connection_string host;port;topic
+python3 -m main --config_path configs/app_config.json --protolib_path /opt/nvidia/deepstream/deepstream-6.1/lib/libnvds_kafka_proto.so --connection_string localhost;9092;deepstream-topic
 ```
