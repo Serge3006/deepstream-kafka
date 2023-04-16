@@ -3,35 +3,6 @@ Deepstream application to detect people and cars inside pre-defined restricted z
 
 ![alt text](https://github.com/Serge3006/deepstream-kafka/blob/master/resources/output.gif "Application output")
 
-
-## Dependencies
-
-1. Install Kafka dependencies
-
-The Kafka adapter uses librdkafka for the underlying protocol implementation. This library must be installed prior to use. To install librdkakfa, enter these commands:
-
-```
-git clone https://github.com/edenhill/librdkafka.git
-cd librdkafka
-git reset --hard 063a9ae7a65cebdf1cc128da9815c05f91a2a996
-./configure
-make
-sudo make install
-sudo cp /usr/local/lib/librdkafka* /opt/nvidia/deepstream/deepstream-5.0/lib
-```
-
-Install additional dependencies:
-```
-sudo apt-get install libglib2.0 libglib2.0-dev
-sudo apt-get install libjansson4 libjansson-dev
-```
-
-2. Install requirements.txt
-
-```
-pip install -r requirements.txt
-```
-
 ## Setup Apache Kafka
 
 The following instructions are based on the official documentation of Apache Kafka taken from here: https://kafka.apache.org/quickstart, for more details or other ways to start the service checkout the official website.
@@ -85,12 +56,32 @@ export DISPLAY =:1
 ```
 docker run --gpus all -it --net=host --privileged -v /tmp/.X11-unix:/tmp/.X11-unix -v <app_folder>/:/app/ -w /app/ -e DISPLAY=$DISPLAY serge3006/deepstream-python-bindings-6.1
 ```
+5. Install Apache Kafka requirements inside docker
 
-5. Install requirements
+The Kafka adapter uses librdkafka for the underlying protocol implementation. This library must be installed prior to use. To install librdkakfa, enter these commands:
+
+```
+git clone https://github.com/edenhill/librdkafka.git
+cd librdkafka
+git reset --hard 063a9ae7a65cebdf1cc128da9815c05f91a2a996
+./configure
+make
+sudo make install
+sudo cp /usr/local/lib/librdkafka* /opt/nvidia/deepstream/deepstream-5.0/lib
+```
+
+Install additional dependencies:
+```
+sudo apt-get install libglib2.0 libglib2.0-dev
+sudo apt-get install libjansson4 libjansson-dev
+```
+
+6. Install requirements.txt
 ```
 pip install -r requirements.txt
 ```
-6. Run the application
+
+7. Run the application
 ```
 python3 -m main --config_path configs/app_config.json --protolib_path /opt/nvidia/deepstream/deepstream-6.1/lib/libnvds_kafka_proto.so --connection_string localhost;9092;deepstream-topic
 ```
